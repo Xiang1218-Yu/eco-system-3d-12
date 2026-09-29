@@ -1,7 +1,13 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import * as THREE from 'three';
 import type { Organism, EcosystemStats, Species } from '@/types/ecosystem';
+import type {
+  AchievementQueueItem,
+  ChallengeCompletions,
+} from '@/types/challenge';
 import { getSpeciesById, SPECIES } from '@/data/species';
+import { buildSnapshot, checkChallenges } from '@/utils/challengeEngine';
 
 interface EcosystemStore {
   organisms: Organism[];
@@ -10,6 +16,16 @@ interface EcosystemStore {
   isRunning: boolean;
   simulationTime: number;
   showLabels: boolean;
+
+  // —— 挑战模式 ——
+  /** 持续类挑战已连续满足条件的 tick 数（不持久化，属于运行态） */
+  challengeStreaks: Record<string, number>;
+  /** 挑战完成记录：challengeId -> 完成时间戳（持久化） */
+  challengeCompletions: ChallengeCompletions;
+  /** 累计科研点，首次完成挑战发放（持久化） */
+  researchPoints: number;
+  /** 等待播放成就动画的队列 */
+  achievementQueue: AchievementQueueItem[];
 
   addOrganism: (speciesId: string, position?: THREE.Vector3) => void;
   removeOrganism: (organismId: string) => void;
@@ -23,6 +39,11 @@ interface EcosystemStore {
   getStats: () => EcosystemStats;
   batchUpdateOrganisms: (updates: { id: string; updates: Partial<Organism> }[]) => void;
   batchRemoveOrganisms: (ids: string[]) => void;
+
+  /** 运行中持续检查挑战条件，首次完成时记录并发奖、入队成就动画 */
+  checkChallengeConditions: () => void;
+  /** 成就动画播放结束后移出队列 */
+  dismissAchievement: (queueId: string) => void;
 }
 
 const AQUARIUM_BOUNDS = {
@@ -74,15 +95,23 @@ function createOrganism(speciesId: string, position?: THREE.Vector3): Organism |
   };
 }
 
-export const useEcosystemStore = create<EcosystemStore>((set, get) => ({
-  organisms: [],
-  selectedSpeciesId: null,
-  selectedOrganismId: null,
-  isRunning: true,
-  simulationTime: 0,
-  showLabels: true,
+export const useEcosystemStore = create<EcosystemStore>()(
+  persist(
+    (set, get) => ({
+      organisms: [],
+      selectedSpeciesId: null,
+      selectedOrganismId: null,
+      isRunning: true,
+      simulationTime: 0,
+      showLabels: true,
 
-  addOrganism: (speciesId, position) => {
+      // —— 挑战模式 ——
+      challengeStreaks: {},
+      challengeCompletions: {},
+      researchPoints: 0,
+      achievementQueue: [],
+
+      addOrganism: (speciesId, position) => {
     const state = get();
     const species = getSpeciesById(speciesId);
     if (!species) return;
@@ -197,6 +226,52 @@ export const useEcosystemStore = create<EcosystemStore>((set, get) => ({
       totalOrganisms: total,
     };
   },
-}));
+
+  checkChallengeConditions: () => {
+    const state = get();
+    const snapshot = {
+      ...buildSnapshot(state.organisms),
+      simulationTime: state.simulationTime,
+    };
+
+    const result = checkChallenges({
+      snapshot,
+      streaks: state.challengeStreaks,
+      completions: state.challengeCompletions,
+    });
+
+    // 首次完成才入队播放成就动画、发放奖励；已完成的挑战不会再出现
+    if (result.newlyCompleted.length > 0) {
+      const newItems: AchievementQueueItem[] = result.newlyCompleted.map((c) => ({
+        id: generateId(),
+        challengeId: c.id,
+      }));
+      set({
+        challengeStreaks: result.streaks,
+        challengeCompletions: result.completions,
+        researchPoints: state.researchPoints + result.rewardsEarned,
+        achievementQueue: [...state.achievementQueue, ...newItems],
+      });
+    } else if (result.streaks !== state.challengeStreaks) {
+      set({ challengeStreaks: result.streaks });
+    }
+  },
+
+  dismissAchievement: (queueId) => {
+    set((prev) => ({
+      achievementQueue: prev.achievementQueue.filter((item) => item.id !== queueId),
+    }));
+  },
+    }),
+    {
+      name: 'ecosystem-challenge-progress',
+      // 仅持久化挑战完成记录与科研点；运行态（队列/streak/生物）不持久化
+      partialize: (state) => ({
+        challengeCompletions: state.challengeCompletions,
+        researchPoints: state.researchPoints,
+      }),
+    },
+  ),
+);
 
 export { AQUARIUM_BOUNDS };

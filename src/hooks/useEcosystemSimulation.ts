@@ -11,6 +11,7 @@ export function useEcosystemSimulation() {
   const batchRemoveOrganisms = useEcosystemStore((s) => s.batchRemoveOrganisms);
   const addOrganism = useEcosystemStore((s) => s.addOrganism);
   const incrementTime = useEcosystemStore((s) => s.incrementTime);
+  const checkChallengeConditions = useEcosystemStore((s) => s.checkChallengeConditions);
   const isRunning = useEcosystemStore((s) => s.isRunning);
 
   useEffect(() => {
@@ -36,6 +37,9 @@ export function useEcosystemSimulation() {
         });
 
         incrementTime();
+
+        // 运行中持续检查挑战条件（首次完成才播动画、发奖）
+        checkChallengeConditions();
       }
 
       frameRef.current = requestAnimationFrame(tick);
@@ -48,5 +52,11 @@ export function useEcosystemSimulation() {
         cancelAnimationFrame(frameRef.current);
       }
     };
-  }, [batchUpdateOrganisms, batchRemoveOrganisms, addOrganism, incrementTime]);
+  }, [
+    batchUpdateOrganisms,
+    batchRemoveOrganisms,
+    addOrganism,
+    incrementTime,
+    checkChallengeConditions,
+  ]);
 }
