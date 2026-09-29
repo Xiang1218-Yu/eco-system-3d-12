@@ -6,11 +6,15 @@ import { EcosystemStats } from '@/components/UI/EcosystemStats';
 import { FoodWebPanel } from '@/components/UI/FoodWebPanel';
 import { SpeciesInfoCard } from '@/components/UI/SpeciesInfoCard';
 import { ControlButtons } from '@/components/UI/ControlButtons';
+import { ChallengePanel } from '@/components/UI/ChallengePanel';
+import { AchievementToast } from '@/components/UI/AchievementToast';
 import { useEcosystemSimulation } from '@/hooks/useEcosystemSimulation';
+import { useChallengeChecker } from '@/hooks/useChallengeChecker';
 import { useEcosystemStore, AQUARIUM_BOUNDS } from '@/store/useEcosystemStore';
 
 export function MainPage() {
   useEcosystemSimulation();
+  useChallengeChecker();
 
   const selectedSpeciesId = useEcosystemStore((s) => s.selectedSpeciesId);
   const addOrganism = useEcosystemStore((s) => s.addOrganism);
@@ -65,6 +69,8 @@ export function MainPage() {
       <EcosystemStats />
       <FoodWebPanel />
       <SpeciesInfoCard />
+      <ChallengePanel />
+      <AchievementToast />
 
       {selectedSpeciesId && (
         <div className="absolute inset-0 pointer-events-none z-5">
